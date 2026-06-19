@@ -1,0 +1,19 @@
+{
+  "name": "職員参集ナビ",
+  "short_name": "参集ナビ",
+  "description": "地震発生時に参集判断と施設への報告文作成を支援するPWAです。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f6f9",
+  "theme_color": "#155e9f",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
