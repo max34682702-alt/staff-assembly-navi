@@ -208,6 +208,25 @@
         font-weight: 800;
       }
 
+      .field small {
+        color: #4b5b68;
+        font-size: 0.95rem;
+        font-weight: 700;
+        line-height: 1.6;
+      }
+
+      .examples {
+        display: grid;
+        gap: 6px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: #f9fbfd;
+        color: #354554;
+        font-size: 0.95rem;
+        font-weight: 700;
+        line-height: 1.55;
+      }
+
       .field input,
       .field select,
       .field textarea {
@@ -299,6 +318,10 @@
         color: #5a4100;
         font-style: normal;
         font-weight: 800;
+      }
+
+      .methodList button {
+        margin-top: 12px;
       }
 
       .stepList li {
@@ -395,12 +418,16 @@
         location: "",
         safety: "無事",
         attendance: "判断中",
-        eta: "",
+        eta: "現時点では不明",
         transport: "徒歩",
+        assemblyNote: "",
         family: "安否確認中",
         home: "確認中",
         note: ""
       };
+
+      const transportOptions = ["徒歩", "自転車", "車", "公共交通機関", "家族送迎", "未定", "その他"];
+      const etaOptions = ["30分以内", "1時間以内", "2時間以内", "3時間以上", "公共交通機関復旧後", "家族対応後", "現時点では不明", "その他"];
 
       const attendanceMap = {
         "参集できる": "可能",
@@ -560,6 +587,7 @@
       let roleType = "";
       let copied = false;
       let created = false;
+      let notice = "";
       let report = loadReport();
 
       function loadReport() {
@@ -573,7 +601,9 @@
       function normalizeReport(value) {
         return {
           ...value,
-          family: value.family === "確認必要" ? "安否確認中" : value.family
+          family: value.family === "確認必要" ? "安否確認中" : value.family,
+          eta: !value.eta || etaOptions.includes(value.eta) ? value.eta : "その他",
+          transport: !value.transport || transportOptions.includes(value.transport) ? value.transport : "その他"
         };
       }
 
@@ -591,6 +621,19 @@
         return value && value.trim() ? value : fallback;
       }
 
+      function formatTransport(value) {
+        return valueOrFallback(value, "未定");
+      }
+
+      function createSmsUrl(text) {
+        const phone = facilityConfig.facilitySmartphone.replaceAll("-", "");
+        return `sms:${phone}?body=${encodeURIComponent(text)}`;
+      }
+
+      function createMailUrl(text) {
+        return `mailto:${facilityConfig.facilityEmail}?subject=${encodeURIComponent("職員参集報告")}&body=${encodeURIComponent(text)}`;
+      }
+
       function saveReport() {
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(report));
@@ -602,10 +645,11 @@
           `現在地：${valueOrFallback(report.location, "未入力")}`,
           `本人安否：${report.safety}`,
           `参集：${formatAttendance(report.attendance)}`,
+          `移動手段：${formatTransport(report.transport)}`,
           `到着見込み：${valueOrFallback(report.eta, "現時点では不明")}`,
-          `移動手段：${report.transport}`,
           `家族状況：${report.family}`,
           `自宅状況：${report.home}`,
+          `参集に関する補足：${valueOrFallback(report.assemblyNote, "なし")}`,
           `その他：${valueOrFallback(report.note, "なし")}`
         ].join("\n");
       }
@@ -613,7 +657,7 @@
       function go(nextScreen) {
         screen = nextScreen;
         copied = false;
-        created = false;
+        notice = "";
         render();
       }
 
@@ -627,6 +671,10 @@
 
       function button(label, action, className = "") {
         return `<button class="${className}" data-action="${action}">${label}</button>`;
+      }
+
+      function examples(items) {
+        return `<div class="examples">${items.map((item) => `<span>${item}</span>`).join("")}</div>`;
       }
 
       function checkList(items) {
@@ -797,11 +845,33 @@
               ${field("現在地", "location")}
               ${selectField("本人安否", "safety", ["無事", "負傷あり"])}
               ${selectField("参集可否", "attendance", ["可能", "条件付き", "不可", "判断中"])}
-              ${field("到着見込み", "eta")}
-              ${selectField("移動手段", "transport", ["徒歩", "自転車", "車", "公共交通機関", "その他"])}
+              ${selectField("移動手段", "transport", transportOptions)}
+              ${selectField("到着見込み", "eta", etaOptions)}
               ${selectField("家族状況", "family", ["問題なし", "安否確認中", "対応中", "不明"])}
               ${selectField("自宅状況", "home", ["問題なし", "被害あり", "確認中", "不明"])}
-              <label class="field"><span>その他</span><textarea data-field="note" rows="4">${escapeHtml(report.note)}</textarea></label>
+              <label class="field">
+                <span>参集に関する補足</span>
+                <small>必要に応じて、移動経路や参集できる条件を入力してください。</small>
+                ${examples([
+                  "例：家族の安否確認後に出発します",
+                  "例：橋が通れれば車で30分程度です",
+                  "例：公共交通機関が復旧すれば参集可能です",
+                  "例：子どもの預け先を確認中です",
+                  "例：道路状況確認後に再連絡します"
+                ])}
+                <textarea data-field="assemblyNote" rows="4" placeholder="例：家族確認後に出発、橋が通れれば車で30分程度 など">${escapeHtml(report.assemblyNote)}</textarea>
+              </label>
+              <label class="field">
+                <span>その他</span>
+                <small>施設へ伝えておきたいことがあれば入力してください。</small>
+                ${examples([
+                  "例：自宅に一部破損があります",
+                  "例：家族対応中のため、再度連絡します",
+                  "例：携帯の充電が少ないです",
+                  "例：近隣道路が混雑しています"
+                ])}
+                <textarea data-field="note" rows="4" placeholder="例：自宅被害あり、家族対応中、携帯充電少ない など">${escapeHtml(report.note)}</textarea>
+              </label>
             </div>
             <div class="reportBox">
               <h2>生成した報告文</h2>
@@ -809,9 +879,15 @@
             </div>
             ${created ? `<p class="success">報告文を作成しました</p>` : ""}
             ${copied ? `<p class="success">コピーしました</p>` : ""}
+            ${notice ? `<p class="success">${notice}</p>` : ""}
+            <p class="offlineNotice">SMS・メール・LINE等の送信には通信状況が必要です。通信が不安定な場合は、先に報告文をコピーしておき、通信が戻ってから送信してください。誤送信防止のため、最後の送信操作は本人が行ってください。</p>
+            <p class="offlineNotice">機種によっては本文が自動入力されない場合があります。その場合は、報告文をコピーして貼り付けてください。</p>
             <div class="buttonStack">
               ${button("報告文を作成する", "createReport", "secondary")}
               ${button("報告文をコピーする", "copyReport", "copyButton")}
+              ${button("SMSで送る", "sendSms")}
+              ${button("メールで送る", "sendMail")}
+              ${button("LINE・SNSで共有", "shareReport")}
               ${button("入力内容をリセット", "resetReport", "secondary")}
               ${button("連絡手段を確認", "go:contact", "secondary")}
             </div>
@@ -821,24 +897,26 @@
 
       function renderContact() {
         const methods = [
-          ["1. SMS", facilityConfig.facilitySmartphone, "送信には通信状況が必要です"],
-          ["2. メール", facilityConfig.facilityEmail, "送信には通信状況が必要です"],
+          ["1. SMS", facilityConfig.facilitySmartphone, "SMSで送る", "sendSms"],
+          ["2. メール", facilityConfig.facilityEmail, "メールで送る", "sendMail"],
           [
             "3. LINE",
             "施設LINEまたは指定の連絡グループ",
-            facilityConfig.lineNote.replace("施設LINEまたは指定の連絡グループへ、コピーした報告文を送信してください。", "")
+            "LINE・SNSで共有",
+            "shareReport",
+            "未登録の職員はSMSまたはメールを使用してください。"
           ],
-          ["4. 電話", facilityConfig.representativePhone, "発信には通信状況が必要です"],
-          ["5. 171", facilityConfig.dial171Phone, "171への発信には通信状況が必要です"]
+          ["4. 電話", facilityConfig.representativePhone, "電話する", "callPhone"],
+          ["5. 171", facilityConfig.dial171Phone, "171の使い方を見る", "go:dial171"]
         ];
         return `
           <section class="panel">
             <p class="lead importantMessage">つながる方法で、短く報告してください。電話は混雑しやすいため、文字で残せる手段を優先します。</p>
             <p class="offlineNotice">このナビは、事前にスマホで開いておくことで、通信が不安定な状況でも基本画面を確認できます。SMS・メール・LINE・電話・171の利用には通信状況が必要です。</p>
+            ${!created ? `<p class="offlineNotice">先に報告文を作成してください。SMS・メール・LINE共有では、作成済みの報告文を使用します。</p>` : ""}
             <ol class="methodList">
-              ${methods.map(([name, detail, caution]) => `<li><strong>${name}</strong><span>${detail}</span><em>${caution}</em></li>`).join("")}
+              ${methods.map(([name, detail, actionLabel, action, caution]) => `<li><strong>${name}</strong><span>${detail}</span>${caution ? `<em>${caution}</em>` : ""}${button(actionLabel, `contact:${action}`)}</li>`).join("")}
             </ol>
-            ${button("171の使い方を見る", "go:dial171")}
           </section>
         `;
       }
@@ -895,14 +973,28 @@
               saveReport();
               created = true;
               copied = false;
+              notice = "";
               render();
               return;
             }
             if (action === "copyReport") {
               await copyReport();
               copied = true;
+              notice = "";
               created = false;
               render();
+              return;
+            }
+            if (action === "sendSms") {
+              window.location.href = createSmsUrl(reportText());
+              return;
+            }
+            if (action === "sendMail") {
+              window.location.href = createMailUrl(reportText());
+              return;
+            }
+            if (action === "shareReport") {
+              await shareReport();
               return;
             }
             if (action === "resetReport") {
@@ -912,7 +1004,21 @@
               } catch {}
               copied = false;
               created = false;
+              notice = "";
               render();
+            }
+            if (action.startsWith("contact:")) {
+              const contactAction = action.slice(8);
+              if (!created && ["sendSms", "sendMail", "shareReport"].includes(contactAction)) {
+                alert("先に報告文を作成してください");
+                go("report");
+                return;
+              }
+              if (contactAction === "sendSms") window.location.href = createSmsUrl(reportText());
+              if (contactAction === "sendMail") window.location.href = createMailUrl(reportText());
+              if (contactAction === "shareReport") await shareReport();
+              if (contactAction === "callPhone") window.location.href = `tel:${facilityConfig.representativePhone}`;
+              if (contactAction.startsWith("go:")) go(contactAction.slice(3));
             }
           });
         });
@@ -922,6 +1028,7 @@
             report[element.dataset.field] = element.value;
             copied = false;
             created = false;
+            notice = "";
             saveReport();
             const pre = document.querySelector(".reportBox pre");
             if (pre) pre.textContent = reportText();
@@ -947,6 +1054,24 @@
           document.execCommand("copy");
           textarea.remove();
         }
+      }
+
+      async function shareReport() {
+        if (navigator.share) {
+          try {
+            await navigator.share({ text: reportText() });
+            notice = "";
+            render();
+            return;
+          } catch {
+            return;
+          }
+        }
+
+        await copyReport();
+        copied = false;
+        notice = "報告文をコピーしました。LINEまたは指定の連絡グループに貼り付けて送信してください。";
+        render();
       }
 
       render();

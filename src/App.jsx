@@ -7,12 +7,16 @@ const initialReport = {
   location: "",
   safety: "無事",
   attendance: "判断中",
-  eta: "",
+  eta: "現時点では不明",
   transport: "徒歩",
+  assemblyNote: "",
   family: "安否確認中",
   home: "確認中",
   note: ""
 };
+
+const transportOptions = ["徒歩", "自転車", "車", "公共交通機関", "家族送迎", "未定", "その他"];
+const etaOptions = ["30分以内", "1時間以内", "2時間以内", "3時間以上", "公共交通機関復旧後", "家族対応後", "現時点では不明", "その他"];
 
 const attendanceMap = {
   "参集できる": "可能",
@@ -167,7 +171,9 @@ function loadReport() {
 function normalizeReport(report) {
   return {
     ...report,
-    family: report.family === "確認必要" ? "安否確認中" : report.family
+    family: report.family === "確認必要" ? "安否確認中" : report.family,
+    eta: !report.eta || etaOptions.includes(report.eta) ? report.eta : "その他",
+    transport: !report.transport || transportOptions.includes(report.transport) ? report.transport : "その他"
   };
 }
 
@@ -183,6 +189,21 @@ function formatAttendance(value) {
 
 function valueOrFallback(value, fallback) {
   return value && value.trim() ? value : fallback;
+}
+
+function formatTransport(value) {
+  return valueOrFallback(value, "未定");
+}
+
+function createSmsUrl(text) {
+  const phone = facilityConfig.facilitySmartphone.replaceAll("-", "");
+  return `sms:${phone}?body=${encodeURIComponent(text)}`;
+}
+
+function createMailUrl(text) {
+  return `mailto:${facilityConfig.facilityEmail}?subject=${encodeURIComponent(
+    "職員参集報告"
+  )}&body=${encodeURIComponent(text)}`;
 }
 
 function saveReport(report) {
@@ -208,12 +229,14 @@ function App() {
   const [report, setReport] = useState(loadReport);
   const [copied, setCopied] = useState(false);
   const [created, setCreated] = useState(false);
+  const [notice, setNotice] = useState("");
 
   const updateReport = (key, value) => {
     const next = { ...report, [key]: value };
     setReport(next);
     setCreated(false);
     setCopied(false);
+    setNotice("");
     saveReport(next);
   };
 
@@ -227,6 +250,7 @@ function App() {
     removeSavedReport();
     setCreated(false);
     setCopied(false);
+    setNotice("");
   };
 
   const reportText = useMemo(
@@ -235,10 +259,11 @@ function App() {
         `現在地：${valueOrFallback(report.location, "未入力")}`,
         `本人安否：${report.safety}`,
         `参集：${formatAttendance(report.attendance)}`,
+        `移動手段：${formatTransport(report.transport)}`,
         `到着見込み：${valueOrFallback(report.eta, "現時点では不明")}`,
-        `移動手段：${report.transport}`,
         `家族状況：${report.family}`,
         `自宅状況：${report.home}`,
+        `参集に関する補足：${valueOrFallback(report.assemblyNote, "なし")}`,
         `その他：${valueOrFallback(report.note, "なし")}`
       ].join("\n"),
     [report]
@@ -259,6 +284,30 @@ function App() {
       textarea.remove();
     }
     setCopied(true);
+    setNotice("");
+  };
+
+  const shareReport = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({ text: reportText });
+        setNotice("");
+        return;
+      } catch {
+        return;
+      }
+    }
+
+    await copyReport();
+    setNotice("報告文をコピーしました。LINEまたは指定の連絡グループに貼り付けて送信してください。");
+  };
+
+  const openSms = () => {
+    window.location.href = createSmsUrl(reportText);
+  };
+
+  const openMail = () => {
+    window.location.href = createMailUrl(reportText);
   };
 
   return (
@@ -315,15 +364,28 @@ function App() {
             copyReport={copyReport}
             copied={copied}
             created={created}
+            notice={notice}
             createReport={() => {
               saveReport(report);
               setCreated(true);
+              setNotice("");
             }}
+            openSms={openSms}
+            openMail={openMail}
+            shareReport={shareReport}
             resetReport={resetReport}
             next={() => setScreen("contact")}
           />
         )}
-        {screen === "contact" && <ContactScreen go={setScreen} />}
+        {screen === "contact" && (
+          <ContactScreen
+            go={setScreen}
+            reportReady={created}
+            openSms={openSms}
+            openMail={openMail}
+            shareReport={shareReport}
+          />
+        )}
         {screen === "dial171" && <Dial171Screen />}
       </main>
       <FooterNav currentScreen={screen} go={setScreen} />
@@ -508,7 +570,11 @@ function ReportScreen({
   copyReport,
   copied,
   created,
+  notice,
   createReport,
+  openSms,
+  openMail,
+  shareReport,
   resetReport,
   next
 }) {
@@ -521,13 +587,46 @@ function ReportScreen({
         <TextInput label="現在地" value={report.location} onChange={(v) => updateReport("location", v)} />
         <SelectInput label="本人安否" value={report.safety} options={["無事", "負傷あり"]} onChange={(v) => updateReport("safety", v)} />
         <SelectInput label="参集可否" value={report.attendance} options={["可能", "条件付き", "不可", "判断中"]} onChange={(v) => updateReport("attendance", v)} />
-        <TextInput label="到着見込み" value={report.eta} onChange={(v) => updateReport("eta", v)} />
-        <SelectInput label="移動手段" value={report.transport} options={["徒歩", "自転車", "車", "公共交通機関", "その他"]} onChange={(v) => updateReport("transport", v)} />
+        <SelectInput label="移動手段" value={report.transport} options={transportOptions} onChange={(v) => updateReport("transport", v)} />
+        <SelectInput label="到着見込み" value={report.eta} options={etaOptions} onChange={(v) => updateReport("eta", v)} />
         <SelectInput label="家族状況" value={report.family} options={["問題なし", "安否確認中", "対応中", "不明"]} onChange={(v) => updateReport("family", v)} />
         <SelectInput label="自宅状況" value={report.home} options={["問題なし", "被害あり", "確認中", "不明"]} onChange={(v) => updateReport("home", v)} />
         <label className="field">
+          <span>参集に関する補足</span>
+          <small>必要に応じて、移動経路や参集できる条件を入力してください。</small>
+          <HelpExamples
+            examples={[
+              "例：家族の安否確認後に出発します",
+              "例：橋が通れれば車で30分程度です",
+              "例：公共交通機関が復旧すれば参集可能です",
+              "例：子どもの預け先を確認中です",
+              "例：道路状況確認後に再連絡します"
+            ]}
+          />
+          <textarea
+            value={report.assemblyNote}
+            onChange={(event) => updateReport("assemblyNote", event.target.value)}
+            rows="4"
+            placeholder="例：家族確認後に出発、橋が通れれば車で30分程度 など"
+          />
+        </label>
+        <label className="field">
           <span>その他</span>
-          <textarea value={report.note} onChange={(event) => updateReport("note", event.target.value)} rows="4" />
+          <small>施設へ伝えておきたいことがあれば入力してください。</small>
+          <HelpExamples
+            examples={[
+              "例：自宅に一部破損があります",
+              "例：家族対応中のため、再度連絡します",
+              "例：携帯の充電が少ないです",
+              "例：近隣道路が混雑しています"
+            ]}
+          />
+          <textarea
+            value={report.note}
+            onChange={(event) => updateReport("note", event.target.value)}
+            rows="4"
+            placeholder="例：自宅被害あり、家族対応中、携帯充電少ない など"
+          />
         </label>
       </div>
 
@@ -538,10 +637,20 @@ function ReportScreen({
 
       {created && <p className="success">報告文を作成しました</p>}
       {copied && <p className="success">コピーしました</p>}
+      {notice && <p className="success">{notice}</p>}
 
+      <p className="offlineNotice">
+        SMS・メール・LINE等の送信には通信状況が必要です。通信が不安定な場合は、先に報告文をコピーしておき、通信が戻ってから送信してください。誤送信防止のため、最後の送信操作は本人が行ってください。
+      </p>
+      <p className="offlineNotice">
+        機種によっては本文が自動入力されない場合があります。その場合は、報告文をコピーして貼り付けてください。
+      </p>
       <div className="buttonStack">
         <button className="secondary" onClick={createReport}>報告文を作成する</button>
         <button className="copyButton" onClick={copyReport}>報告文をコピーする</button>
+        <button onClick={openSms}>SMSで送る</button>
+        <button onClick={openMail}>メールで送る</button>
+        <button onClick={shareReport}>LINE・SNSで共有</button>
         <button className="secondary" onClick={resetReport}>入力内容をリセット</button>
         <button className="secondary" onClick={next}>連絡手段を確認</button>
       </div>
@@ -549,18 +658,29 @@ function ReportScreen({
   );
 }
 
-function ContactScreen({ go }) {
+function ContactScreen({ go, reportReady, openSms, openMail, shareReport }) {
   const methods = [
-    ["1. SMS", facilityConfig.facilitySmartphone, "送信には通信状況が必要です"],
-    ["2. メール", facilityConfig.facilityEmail, "送信には通信状況が必要です"],
+    ["1. SMS", facilityConfig.facilitySmartphone, "SMSで送る", openSms],
+    ["2. メール", facilityConfig.facilityEmail, "メールで送る", openMail],
     [
       "3. LINE",
       "施設LINEまたは指定の連絡グループ",
-      facilityConfig.lineNote.replace("施設LINEまたは指定の連絡グループへ、コピーした報告文を送信してください。", "")
+      "LINE・SNSで共有",
+      shareReport,
+      "未登録の職員はSMSまたはメールを使用してください。"
     ],
-    ["4. 電話", facilityConfig.representativePhone, "発信には通信状況が必要です"],
-    ["5. 171", facilityConfig.dial171Phone, "171への発信には通信状況が必要です"]
+    ["4. 電話", facilityConfig.representativePhone, "電話する", () => { window.location.href = `tel:${facilityConfig.representativePhone}`; }],
+    ["5. 171", facilityConfig.dial171Phone, "171の使い方を見る", () => go("dial171")]
   ];
+
+  const handleContactAction = (action) => {
+    if (!reportReady && (action === openSms || action === openMail || action === shareReport)) {
+      alert("先に報告文を作成してください");
+      go("report");
+      return;
+    }
+    action();
+  };
 
   return (
     <section className="panel">
@@ -570,16 +690,19 @@ function ContactScreen({ go }) {
       <p className="offlineNotice">
         このナビは、事前にスマホで開いておくことで、通信が不安定な状況でも基本画面を確認できます。SMS・メール・LINE・電話・171の利用には通信状況が必要です。
       </p>
+      {!reportReady && (
+        <p className="offlineNotice">先に報告文を作成してください。SMS・メール・LINE共有では、作成済みの報告文を使用します。</p>
+      )}
       <ol className="methodList">
-        {methods.map(([name, detail, caution]) => (
+        {methods.map(([name, detail, actionLabel, action, caution]) => (
           <li key={name}>
             <strong>{name}</strong>
             <span>{detail}</span>
-            <em>{caution}</em>
+            {caution && <em>{caution}</em>}
+            <button onClick={() => handleContactAction(action)}>{actionLabel}</button>
           </li>
         ))}
       </ol>
-      <button onClick={() => go("dial171")}>171の使い方を見る</button>
     </section>
   );
 }
@@ -655,6 +778,16 @@ function SelectInput({ label, value, options, onChange }) {
         ))}
       </select>
     </label>
+  );
+}
+
+function HelpExamples({ examples }) {
+  return (
+    <div className="examples">
+      {examples.map((example) => (
+        <span key={example}>{example}</span>
+      ))}
+    </div>
   );
 }
 

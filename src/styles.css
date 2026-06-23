@@ -189,6 +189,25 @@ h2 {
   font-weight: 800;
 }
 
+.field small {
+  color: #4b5b68;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.examples {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f9fbfd;
+  color: #354554;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
 .field input,
 .field select,
 .field textarea {
@@ -280,6 +299,10 @@ pre {
   color: #5a4100;
   font-style: normal;
   font-weight: 800;
+}
+
+.methodList button {
+  margin-top: 12px;
 }
 
 .offlineNotice {
